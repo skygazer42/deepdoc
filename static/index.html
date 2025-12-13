@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepDoc API Playground</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --accent: #10b981;
+      --accent-2: #38bdf8;
+      --muted: #94a3b8;
+      --text: #e2e8f0;
+      --border: #1f2937;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(56,189,248,0.08), transparent 35%),
+                  radial-gradient(circle at 80% 0%, rgba(16,185,129,0.12), transparent 25%),
+                  var(--bg);
+      color: var(--text);
+      padding: 32px 16px 48px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: -0.02em;
+    }
+    h3 { margin: 0; font-size: 16px; }
+    p.lead { margin: 0 0 24px; color: var(--muted); }
+    .shell {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    }
+    label { display: block; margin: 10px 0 6px; font-weight: 600; font-size: 13px; }
+    input, select, button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      color: var(--text);
+      font-size: 14px;
+    }
+    input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .row-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #0b1220;
+      font-weight: 700;
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+    button.secondary {
+      background: #0b1220;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.small {
+      padding: 6px 12px;
+      font-size: 12px;
+      min-width: auto;
+    }
+    button:active { transform: translateY(1px); }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+    .result-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(16,185,129,0.15);
+      color: #34d399;
+      font-size: 12px;
+      border: 1px solid rgba(16,185,129,0.35);
+    }
+    .badge.info {
+      background: rgba(56,189,248,0.15);
+      color: #38bdf8;
+      border-color: rgba(56,189,248,0.35);
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: #0c1423;
+    }
+    .card h4 { margin: 0 0 6px; font-size: 14px; }
+    .card pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #cbd5e1;
+      font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 13px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .tab {
+      padding: 8px 16px;
+      border-radius: 8px 8px 0 0;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      background: var(--accent);
+      color: #0b1220;
+    }
+    .tab:hover:not(.active) {
+      background: rgba(255,255,255,0.05);
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Formats grid */
+    .formats-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .format-tag {
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(56,189,248,0.1);
+      color: var(--accent-2);
+      font-size: 12px;
+      font-family: monospace;
+      border: 1px solid rgba(56,189,248,0.2);
+    }
+
+    /* Health status */
+    .health-box {
+      padding: 12px;
+      border-radius: 10px;
+      background: #0c1423;
+      border: 1px solid var(--border);
+      margin-top: 12px;
+    }
+    .health-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .health-row:last-child { border-bottom: none; }
+    .health-label { color: var(--muted); }
+    .health-value { font-weight: 600; }
+    .health-value.ok { color: var(--success); }
+    .health-value.error { color: var(--error); }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 16px 0;
+    }
+
+    /* Section title */
+    .section-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin: 16px 0 8px;
+    }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--muted);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Results area */
+    .results-container {
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+    }
+
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      .actions { flex-direction: column; }
+      .row-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <!-- Left Panel -->
+    <div>
+      <h1>DeepDoc API Playground</h1>
+      <p class="lead">智能文档解析服务 - 支持 PDF、Word、Excel 等多种格式</p>
+
+      <div class="panel">
+        <!-- API Settings -->
+        <label for="apiBase">API 地址</label>
+        <input id="apiBase" type="text" placeholder="http://localhost:8000" />
+
+        <!-- Health & Formats -->
+        <div class="section-title">服务状态</div>
+        <div class="row">
+          <button class="secondary small" id="healthBtn">检查状态</button>
+          <button class="secondary small" id="formatsBtn">获取格式</button>
+        </div>
+        <div class="health-box" id="healthBox" style="display:none;"></div>
+
+        <div class="divider"></div>
+
+        <!-- File Upload -->
+        <label for="file">选择文件</label>
+        <input id="file" type="file" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.ppt,.pptx,.html,.htm,.txt,.md" />
+
+        <!-- Parse Options -->
+        <div class="section-title">解析选项 (PDF)</div>
+        <div class="row">
+          <div>
+            <label for="zoomin">DPI 缩放</label>
+            <input id="zoomin" type="number" min="1" max="6" value="3" />
+          </div>
+          <div>
+            <label for="maxChunks">最大块数</label>
+            <input id="maxChunks" type="number" min="1" max="500" value="100" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <label><input id="useOcr" type="checkbox" checked /> 使用 OCR</label>
+          <label><input id="needImage" type="checkbox" /> 提取图像</label>
+        </div>
+
+        <!-- Actions -->
+        <div class="section-title">操作</div>
+        <div class="row-3">
+          <button id="parseBtn">完整解析</button>
+          <button class="secondary" id="simpleParseBtn">快速解析</button>
+          <button class="secondary" id="clearBtn">清空</button>
+        </div>
+
+        <div class="status" id="status">等待上传文件…</div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="panel">
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="chunks">文本块</button>
+        <button class="tab" data-tab="images">图像</button>
+        <button class="tab" data-tab="raw">原始 JSON</button>
+      </div>
+
+      <!-- Chunks Tab -->
+      <div class="tab-content active" id="tab-chunks">
+        <div class="topbar">
+          <div class="result-head">
+            <h3>解析结果</h3>
+            <span class="badge" id="chunkCount">0 chunks</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="secondary small" id="copyChunksBtn">复制文本</button>
+            <button class="secondary small" id="saveBtn">下载 JSON</button>
+          </div>
+        </div>
+        <div class="results-container">
+          <div class="list" id="resultList">
+            <div class="card" style="text-align:center;color:var(--muted);">
+              上传文件并点击解析按钮查看结果
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Images Tab -->
+      <div class="tab-content" id="tab-images">
+        <div class="topbar">
+          <div class="result-head">
+            <h3>提取的图像</h3>
+            <span class="badge info" id="imageCount">0 images</span>
+          </div>
+        </div>
+        <div class="results-container">
+          <div class="list" id="imageList">
+            <div class="card" style="text-align:center;color:var(--muted);">
+              勾选"提取图像"选项后解析 PDF 文件可查看
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Raw JSON Tab -->
+      <div class="tab-content" id="tab-raw">
+        <div class="topbar">
+          <div class="result-head">
+            <h3>原始响应</h3>
+            <span class="badge info" id="rawSize">0 bytes</span>
+          </div>
+          <button class="secondary small" id="copyRawBtn">复制 JSON</button>
+        </div>
+        <div class="results-container">
+          <div class="card">
+            <pre id="rawJson" style="max-height:600px;">// 解析结果将显示在这里</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = (id) => document.getElementById(id);
+    const statusEl = qs("status");
+    const chunkCountEl = qs("chunkCount");
+    const imageCountEl = qs("imageCount");
+    const rawSizeEl = qs("rawSize");
+    const resultList = qs("resultList");
+    const imageList = qs("imageList");
+    const rawJson = qs("rawJson");
+    const healthBox = qs("healthBox");
+    const apiBaseInput = qs("apiBase");
+
+    // Initialize API base (fixed to local docker port by default)
+    apiBaseInput.value = "http://localhost:8000";
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        qs(`tab-${tab.dataset.tab}`).classList.add('active');
+      });
+    });
+
+    const setStatus = (msg, type = 'info') => {
+      const isLoading = type === 'loading';
+      statusEl.innerHTML = isLoading ? `<span class="spinner"></span>${msg}` : msg;
+      statusEl.style.color = type === 'error' ? '#f87171' : type === 'success' ? '#34d399' : 'var(--muted)';
+    };
+
+    const getBase = () => apiBaseInput.value.replace(/\/+$/, "");
+
+    // Health check
+    qs("healthBtn").addEventListener("click", async () => {
+      setStatus("检查服务状态...", "loading");
+      try {
+        const [healthResp, rootResp] = await Promise.all([
+          fetch(`${getBase()}/health`),
+          fetch(`${getBase()}/`)
+        ]);
+        const health = await healthResp.json();
+        const root = await rootResp.json();
+
+        healthBox.style.display = "block";
+        healthBox.innerHTML = `
+          <div class="health-row">
+            <span class="health-label">状态</span>
+            <span class="health-value ${health.status === 'ok' ? 'ok' : 'error'}">${health.status || root.status}</span>
+          </div>
+          <div class="health-row">
+            <span class="health-label">版本</span>
+            <span class="health-value">${root.version || 'N/A'}</span>
+          </div>
+          <div class="health-row">
+            <span class="health-label">支持格式数</span>
+            <span class="health-value">${root.supported_formats?.length || 'N/A'}</span>
+          </div>
+        `;
+        setStatus("服务正常运行", "success");
+      } catch (err) {
+        healthBox.style.display = "block";
+        healthBox.innerHTML = `
+          <div class="health-row">
+            <span class="health-label">状态</span>
+            <span class="health-value error">连接失败</span>
+          </div>
+          <div class="health-row">
+            <span class="health-label">错误</span>
+            <span class="health-value error">${err.message}</span>
+          </div>
+        `;
+        setStatus(`连接失败: ${err.message}`, "error");
+      }
+    });
+
+    // Get supported formats
+    qs("formatsBtn").addEventListener("click", async () => {
+      setStatus("获取支持格式...", "loading");
+      try {
+        const resp = await fetch(`${getBase()}/supported_formats`);
+        const data = await resp.json();
+
+        healthBox.style.display = "block";
+        healthBox.innerHTML = `
+          <div class="health-row">
+            <span class="health-label">支持格式</span>
+            <span class="health-value">${data.count} 种</span>
+          </div>
+          <div class="formats-grid">
+            ${data.formats.map(f => `<span class="format-tag">${f}</span>`).join('')}
+          </div>
+        `;
+        setStatus(`支持 ${data.count} 种文件格式`, "success");
+      } catch (err) {
+        setStatus(`获取失败: ${err.message}`, "error");
+      }
+    });
+
+    const renderChunks = (data) => {
+      resultList.innerHTML = "";
+      if (!data || !data.chunks || !data.chunks.length) {
+        chunkCountEl.textContent = "0 chunks";
+        resultList.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);">无解析结果</div>';
+        return;
+      }
+      chunkCountEl.textContent = `${data.chunks.length} / ${data.total_chunks} chunks`;
+      data.chunks.forEach((ck, idx) => {
+        const div = document.createElement("div");
+        div.className = "card";
+        const head = document.createElement("h4");
+        const tag = ck.tag || ck.layout_type || "";
+        head.innerHTML = `<span style="color:var(--accent)">#${idx + 1}</span> ${tag ? `<span class="badge" style="margin-left:8px;">${tag}</span>` : ''}`;
+        const pre = document.createElement("pre");
+        pre.textContent = ck.clean_text || ck.text || ck.content || JSON.stringify(ck, null, 2);
+        div.appendChild(head);
+        div.appendChild(pre);
+        resultList.appendChild(div);
+      });
+    };
+
+    const renderImages = (data) => {
+      imageList.innerHTML = "";
+      if (!data || !data.images || !data.images.length) {
+        imageCountEl.textContent = "0 images";
+        imageList.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);">无图像数据</div>';
+        return;
+      }
+      imageCountEl.textContent = `${data.images.length} images`;
+      data.images.forEach((img, idx) => {
+        const div = document.createElement("div");
+        div.className = "card";
+        const head = document.createElement("h4");
+        head.textContent = `#${idx + 1} ${img.kind || ""}`;
+        const image = document.createElement("img");
+        image.src = img.content;
+        image.alt = `image-${idx}`;
+        image.style.maxWidth = "100%";
+        image.style.borderRadius = "8px";
+        image.style.marginTop = "8px";
+        div.appendChild(head);
+        div.appendChild(image);
+        imageList.appendChild(div);
+      });
+    };
+
+    const renderRaw = (data) => {
+      const json = JSON.stringify(data, null, 2);
+      rawJson.textContent = json;
+      rawSizeEl.textContent = `${(json.length / 1024).toFixed(1)} KB`;
+    };
+
+    // Full parse
+    qs("parseBtn").addEventListener("click", async () => {
+      const file = qs("file").files[0];
+      if (!file) {
+        setStatus("请先选择文件", "error");
+        return;
+      }
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("use_ocr", qs("useOcr").checked ? "true" : "false");
+      fd.append("need_image", qs("needImage").checked ? "true" : "false");
+      fd.append("zoomin", qs("zoomin").value || "3");
+      fd.append("max_chunks", qs("maxChunks").value || "100");
+
+      setStatus(`解析中: ${file.name}...`, "loading");
+      qs("parseBtn").disabled = true;
+      qs("simpleParseBtn").disabled = true;
+
+      try {
+        const resp = await fetch(`${getBase()}/parse`, { method: "POST", body: fd });
+        const data = await resp.json();
+        if (!resp.ok || data.success === false) {
+          throw new Error(data.error || resp.statusText);
+        }
+        setStatus(`解析完成: ${data.total_chunks} 块 (${file.name})`, "success");
+        renderChunks(data);
+        renderImages(data);
+        renderRaw(data);
+        window.__lastResult = data;
+      } catch (err) {
+        setStatus(`解析失败: ${err.message}`, "error");
+      } finally {
+        qs("parseBtn").disabled = false;
+        qs("simpleParseBtn").disabled = false;
+      }
+    });
+
+    // Simple parse
+    qs("simpleParseBtn").addEventListener("click", async () => {
+      const file = qs("file").files[0];
+      if (!file) {
+        setStatus("请先选择文件", "error");
+        return;
+      }
+      const fd = new FormData();
+      fd.append("file", file);
+
+      setStatus(`快速解析中: ${file.name}...`, "loading");
+      qs("parseBtn").disabled = true;
+      qs("simpleParseBtn").disabled = true;
+
+      try {
+        const resp = await fetch(`${getBase()}/parse/simple`, { method: "POST", body: fd });
+        const data = await resp.json();
+        if (!resp.ok || data.success === false) {
+          throw new Error(data.error || resp.statusText);
+        }
+        setStatus(`快速解析完成: ${data.total_chunks} 块`, "success");
+        renderChunks(data);
+        renderImages(data);
+        renderRaw(data);
+        window.__lastResult = data;
+      } catch (err) {
+        setStatus(`解析失败: ${err.message}`, "error");
+      } finally {
+        qs("parseBtn").disabled = false;
+        qs("simpleParseBtn").disabled = false;
+      }
+    });
+
+    // Clear
+    qs("clearBtn").addEventListener("click", () => {
+      qs("file").value = "";
+      resultList.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);">上传文件并点击解析按钮查看结果</div>';
+      imageList.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);">勾选"提取图像"选项后解析 PDF 文件可查看</div>';
+      rawJson.textContent = "// 解析结果将显示在这里";
+      chunkCountEl.textContent = "0 chunks";
+      imageCountEl.textContent = "0 images";
+      rawSizeEl.textContent = "0 bytes";
+      window.__lastResult = null;
+      setStatus("已清空", "info");
+    });
+
+    // Copy chunks text
+    qs("copyChunksBtn").addEventListener("click", () => {
+      const data = window.__lastResult;
+      if (!data || !data.chunks?.length) {
+        setStatus("没有可复制的内容", "error");
+        return;
+      }
+      const text = data.chunks.map(c => c.text || c.content || '').join('\n\n');
+      navigator.clipboard.writeText(text).then(() => {
+        setStatus("文本已复制到剪贴板", "success");
+      });
+    });
+
+    // Copy raw JSON
+    qs("copyRawBtn").addEventListener("click", () => {
+      const data = window.__lastResult;
+      if (!data) {
+        setStatus("没有可复制的内容", "error");
+        return;
+      }
+      navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(() => {
+        setStatus("JSON 已复制到剪贴板", "success");
+      });
+    });
+
+    // Save JSON
+    qs("saveBtn").addEventListener("click", () => {
+      const data = window.__lastResult;
+      if (!data) {
+        setStatus("没有可保存的结果", "error");
+        return;
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `deepdoc_${data.file_name || 'result'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus("结果已下载", "success");
+    });
+
+    // Auto health check on load
+    setTimeout(() => {
+      qs("healthBtn").click();
+    }, 500);
+  </script>
+</body>
+</html>

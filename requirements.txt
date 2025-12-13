@@ -1,0 +1,58 @@
+# DeepDoc 依赖清单
+
+# ======== Web 服务 ========
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# ======== 核心文档处理 ========
+pdfplumber>=0.10.0
+pypdf>=3.0.0
+python-docx>=0.8.11
+openpyxl>=3.1.0
+python-pptx>=0.6.21
+pandas>=2.0.0
+
+# ======== AI/ML 推理 ========
+onnxruntime>=1.16.0
+xgboost>=2.0.0,<3.0.0
+huggingface-hub>=0.19.0
+# torch>=2.0.0  # 可选，用于 GPU 加速
+# 安装 CPU 版本：pip install torch --index-url https://download.pytorch.org/whl/cpu
+# 安装 CUDA 版本：pip install torch --index-url https://download.pytorch.org/whl/cu118
+
+# ======== OCR 和视觉处理 ========
+opencv-python>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+rapidocr-onnxruntime>=1.3.0
+PyMuPDF>=1.23.0
+pyclipper>=1.3.0
+
+# ======== NLP 和分词 ========
+tiktoken>=0.5.0
+datrie>=0.8.2
+hanziconv>=0.3.2
+nltk>=3.8.0
+
+# ======== 类型检查和验证 ========
+beartype>=0.16.0
+six>=1.16.0
+
+# ======== 并发处理 ========
+trio>=0.23.0
+
+# ======== 文本提取 ========
+chardet>=5.2.0
+html-text>=0.5.2
+readability-lxml>=0.8.1
+
+# ======== LangChain ========
+langchain-community>=0.0.10
+
+# ======== 几何计算 ========
+shapely>=2.0.0
+
+# ======== 进度条 ========
+tqdm>=4.66.0

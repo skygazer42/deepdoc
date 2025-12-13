@@ -1,0 +1,57 @@
+services:
+  deepdoc-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deepdoc-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - MODEL_BASE_DIR=/app/resources/models
+      - PYTHONUNBUFFERED=1
+      # OCR 配置
+      - OCR_DET_THRESHOLD=0.3
+      - OCR_REC_THRESHOLD=0.5
+      # PDF 配置
+      - PDF_DPI=200
+      - LIGHTEN=0
+      # HuggingFace 配置（如果需要使用镜像）
+      # - HF_ENDPOINT=https://hf-mirror.com
+    volumes:
+      # 持久化模型缓存（与 MODEL_BASE_DIR 保持一致）
+      - ./resources/models:/app/resources/models
+      # 已解析文档存储（供外部知识库服务使用）
+      - ./data/parsed_docs:/app/data/parsed_docs
+      # 如果需要挂载本地文件进行测试
+      # - ./test_files:/app/test_files:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Dify 外部知识库服务（可选）
+  dify-external-kb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dify-external-kb
+    ports:
+      - "8001:8001"
+    environment:
+      - DOCS_DIR=/app/data/parsed_docs
+      - DIFY_EXTERNAL_KB_KEY=${DIFY_EXTERNAL_KB_KEY:-your-secret-key}
+      - EXTERNAL_KB_PORT=8001
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data/parsed_docs:/app/data/parsed_docs
+    command: ["python", "/app/script/dify_external_kb_service.py"]
+    restart: unless-stopped
+    depends_on:
+      - deepdoc-api
+    profiles:
+      - dify  # 使用 --profile dify 启动
