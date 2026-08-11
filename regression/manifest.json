@@ -1,0 +1,146 @@
+{
+  "generated": "2026-08-11",
+  "root": "regression/documents/",
+  "docs": [
+    {
+      "name": "editable_single.pdf",
+      "type": "pdf_editable",
+      "pages": 4,
+      "expected": "text",
+      "note": "单栏可编辑文本层"
+    },
+    {
+      "name": "editable_twocol.pdf",
+      "type": "pdf_editable",
+      "pages": 4,
+      "expected": "text",
+      "note": "双栏可编辑文本层"
+    },
+    {
+      "name": "editable_10p.pdf",
+      "type": "pdf_editable",
+      "pages": 10,
+      "expected": "text",
+      "note": "10页可编辑文本层"
+    },
+    {
+      "name": "scan_2p.pdf",
+      "type": "pdf_scan",
+      "pages": 2,
+      "expected": "ocr",
+      "note": "纯扫描+红色印章"
+    },
+    {
+      "name": "scan_4p.pdf",
+      "type": "pdf_scan",
+      "pages": 4,
+      "expected": "ocr",
+      "note": "纯扫描无印章"
+    },
+    {
+      "name": "mixed_3p.pdf",
+      "type": "pdf_mixed",
+      "pages": 3,
+      "expected": "ocr_or_text",
+      "note": "文本层+扫描混合"
+    },
+    {
+      "name": "table_ruled.pdf",
+      "type": "pdf_table",
+      "pages": 2,
+      "expected": "table",
+      "note": "表格:ruled"
+    },
+    {
+      "name": "table_borderless.pdf",
+      "type": "pdf_table",
+      "pages": 2,
+      "expected": "table",
+      "note": "表格:borderless"
+    },
+    {
+      "name": "table_merged.pdf",
+      "type": "pdf_table",
+      "pages": 2,
+      "expected": "table",
+      "note": "表格:merged"
+    },
+    {
+      "name": "table_crosspage.pdf",
+      "type": "pdf_table",
+      "pages": 2,
+      "expected": "table",
+      "note": "表格:crosspage"
+    },
+    {
+      "name": "contract.docx",
+      "type": "docx",
+      "pages": 3,
+      "expected": "text",
+      "note": "中文合同 DOCX"
+    },
+    {
+      "name": "contract.xlsx",
+      "type": "xlsx",
+      "pages": 2,
+      "expected": "table",
+      "note": "合同附表 XLSX"
+    },
+    {
+      "name": "contract.pptx",
+      "type": "pptx",
+      "pages": 4,
+      "expected": "text",
+      "note": "合同条款 PPTX"
+    },
+    {
+      "name": "contract.txt",
+      "type": "txt",
+      "pages": 1,
+      "expected": "text",
+      "note": "合同 TXT"
+    },
+    {
+      "name": "contract.html",
+      "type": "html",
+      "pages": 1,
+      "expected": "text",
+      "note": "合同 HTML"
+    },
+    {
+      "name": "encrypted.pdf",
+      "type": "pdf_error",
+      "pages": 1,
+      "expected": "err_422",
+      "note": "密码加密"
+    },
+    {
+      "name": "corrupt.pdf",
+      "type": "pdf_error",
+      "pages": 0,
+      "expected": "err_400",
+      "note": "非PDF头"
+    },
+    {
+      "name": "empty.pdf",
+      "type": "pdf_error",
+      "pages": 0,
+      "expected": "err_400",
+      "note": "空文件"
+    },
+    {
+      "name": "noext",
+      "type": "unknown",
+      "pages": 0,
+      "expected": "err_400",
+      "note": "无扩展名"
+    },
+    {
+      "name": "picture.pdf",
+      "type": "pdf_scan",
+      "pages": 1,
+      "expected": "ocr",
+      "note": "单页图片 PDF"
+    }
+  ]
+}
