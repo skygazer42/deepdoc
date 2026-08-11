@@ -71,7 +71,7 @@ def create_operators(op_param_list, global_config=None):
     return ops
 
 
-def load_model(model_dir, nm, device_id: int | None = None):
+def load_model(model_dir, nm, device_id: int | None = None, threads: int | None = None):
     model_file_path = os.path.join(model_dir, nm + ".onnx")
     model_cached_tag = model_file_path + str(device_id) if device_id is not None else model_file_path
 
@@ -97,8 +97,10 @@ def load_model(model_dir, nm, device_id: int | None = None):
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    options.intra_op_num_threads = 2
-    options.inter_op_num_threads = 2
+    if threads is None:
+        threads = int(os.environ.get("ORT_OCR_THREADS", "2"))
+    options.intra_op_num_threads = threads
+    options.inter_op_num_threads = threads
 
     # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
     # Shrink GPU memory after execution
@@ -526,6 +528,7 @@ class OCR:
         ^_-
 
         """
+        self.parallel_limiter = None  # 每个 OCR 实例独立的并发信号量（默认串行）
         if not model_dir:
             try:
                 model_dir = get_default_resource_dir()
@@ -621,6 +624,12 @@ class OCR:
         if device_id is None:
             device_id = 0
 
+        if self.parallel_limiter is not None:
+            with self.parallel_limiter:
+                return self._detect_impl(img, device_id)
+        return self._detect_impl(img, device_id)
+
+    def _detect_impl(self, img, device_id):
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
 
         if img is None:
@@ -641,7 +650,12 @@ class OCR:
     def recognize(self, ori_im, box, device_id: int | None = None):
         if device_id is None:
             device_id = 0
+        if self.parallel_limiter is not None:
+            with self.parallel_limiter:
+                return self._recognize_impl(ori_im, box, device_id)
+        return self._recognize_impl(ori_im, box, device_id)
 
+    def _recognize_impl(self, ori_im, box, device_id):
         img_crop = self.get_rotate_crop_image(ori_im, box)
 
         rec_res, elapse = self.text_recognizer[device_id]([img_crop])
@@ -653,6 +667,12 @@ class OCR:
     def recognize_batch(self, img_list, device_id: int | None = None):
         if device_id is None:
             device_id = 0
+        if self.parallel_limiter is not None:
+            with self.parallel_limiter:
+                return self._recognize_batch_impl(img_list, device_id)
+        return self._recognize_batch_impl(img_list, device_id)
+
+    def _recognize_batch_impl(self, img_list, device_id):
         rec_res, elapse = self.text_recognizer[device_id](img_list)
         texts = []
         for i in range(len(rec_res)):
@@ -669,6 +689,14 @@ class OCR:
 
         if img is None:
             return None, None, time_dict
+
+        if self.parallel_limiter is not None:
+            with self.parallel_limiter:
+                return self._call_impl(img, device_id, cls)
+        return self._call_impl(img, device_id, cls)
+
+    def _call_impl(self, img, device_id, cls):
+        time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
 
         start = time.time()
         ori_im = img.copy()

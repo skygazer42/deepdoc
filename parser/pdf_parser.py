@@ -170,7 +170,8 @@ class RAGFlowPdfParser:
         """
 
         self.ocr = OCR()
-        self.parallel_limiter = None  # 初始化并发限制
+        self.parallel_limiter = self.ocr.parallel_limiter  # 与 OCR 的并发限制保持一致
+        self.ocr.parallel_limiter = None  # OCR 的并发由本解析器通过 self.parallel_limiter 统一控制
 
         if hasattr(self, "model_speciess"):
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)  # 使用指定模型初始化版面识别器
@@ -485,7 +486,11 @@ class RAGFlowPdfParser:
             del b["txt"]  # 删除临时文本字段
 
         # 批量文本识别
-        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
+        if self.parallel_limiter is not None:
+            with self.parallel_limiter:
+                texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
+        else:
+            texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
 
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
