@@ -19,8 +19,17 @@ import threading
 import os
 import pdfplumber
 from vision.recognizer import Recognizer
-from .layout_recognizer import LayoutRecognizer4YOLOv10 as LayoutRecognizer
+
+# 版面识别引擎选择：
+#   LAYOUT_MODEL=original（默认）→ InfiniFlow YOLOv10（layout.onnx）
+#   LAYOUT_MODEL=doclayout       → DocLayout-YOLO（DocStructBench），
+#                                  配合 LAYOUT_MODEL_SIZE=1024/768/640（默认 768，~2x 加速）
+if os.getenv("LAYOUT_MODEL", "original").lower() == "doclayout":
+    from .layout_recognizer import LayoutRecognizer4DocLayoutYOLO as LayoutRecognizer
+else:
+    from .layout_recognizer import LayoutRecognizer4YOLOv10 as LayoutRecognizer
 from .ocr import OCR
+from .rapidocr_wrapper import RapidOCREngine
 from .table_structure_recognizer import TableStructureRecognizer
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
@@ -84,6 +93,7 @@ def init_in_out(args):
 
 __all__ = [
     "OCR",
+    "RapidOCREngine",
     "Recognizer",
     "LayoutRecognizer",
     "TableStructureRecognizer",

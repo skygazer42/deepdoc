@@ -6,6 +6,8 @@ DeepDoc -> Dify 集成脚本
 1. 纯文本文件（.txt）- 直接上传到 Dify 知识库
 2. JSON 格式 - 用于 Dify 外部知识库 API
 3. Markdown 格式 - 保留结构信息
+
+支持 v1 (同步) 和 v2 (异步) API。
 """
 
 import os
@@ -13,6 +15,7 @@ import sys
 import json
 import argparse
 import requests
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -20,8 +23,8 @@ from typing import Optional
 DEEPDOC_API = os.getenv("DEEPDOC_API", "http://localhost:8000")
 
 
-def parse_with_deepdoc(file_path: str, api_url: str = None, need_image: bool = False) -> dict:
-    """调用 DeepDoc API 解析文档"""
+def parse_with_deepdoc_v1(file_path: str, api_url: str = None, need_image: bool = False) -> dict:
+    """调用 DeepDoc v1 API 解析文档（同步）"""
     base_url = api_url or DEEPDOC_API
     url = f"{base_url}/parse"
 
@@ -34,6 +37,73 @@ def parse_with_deepdoc(file_path: str, api_url: str = None, need_image: bool = F
         raise Exception(f"DeepDoc API error: {response.text}")
 
     return response.json()
+
+
+def parse_with_deepdoc_v2(file_path: str, api_url: str = None, need_image: bool = False,
+                          poll_interval: float = 1.0, max_wait: float = 600.0) -> dict:
+    """调用 DeepDoc v2 API 解析文档（异步）
+
+    1. 提交任务到 /v2/parse
+    2. 轮询 /v2/status/{task_id} 直到完成
+    3. 获取 /v2/result/{task_id}
+    """
+    base_url = api_url or DEEPDOC_API
+
+    # 提交任务
+    submit_url = f"{base_url}/v2/parse"
+    with open(file_path, "rb") as f:
+        files = {"file": (os.path.basename(file_path), f)}
+        data = {"need_image": str(need_image).lower()}
+        response = requests.post(submit_url, files=files, data=data, timeout=60)
+
+    if response.status_code != 200:
+        raise Exception(f"DeepDoc v2 submit error: {response.text}")
+
+    result = response.json()
+    task_id = result.get("task_id")
+
+    # 同步模式（内存队列）
+    if task_id == "sync":
+        return result.get("result", {})
+
+    # 异步模式：轮询状态
+    print(f"任务已提交: {task_id}")
+    elapsed = 0.0
+    while elapsed < max_wait:
+        status_url = f"{base_url}/v2/status/{task_id}"
+        response = requests.get(status_url, timeout=30)
+        if response.status_code != 200:
+            raise Exception(f"DeepDoc v2 status error: {response.text}")
+
+        status_data = response.json()
+        status = status_data.get("status")
+        print(f"  状态: {status} ({elapsed:.1f}s)")
+
+        if status == "completed":
+            # 获取结果
+            result_url = f"{base_url}/v2/result/{task_id}"
+            response = requests.get(result_url, timeout=30)
+            if response.status_code != 200:
+                raise Exception(f"DeepDoc v2 result error: {response.text}")
+            return response.json().get("result", {})
+
+        elif status == "failed":
+            error = status_data.get("error", "未知错误")
+            raise Exception(f"DeepDoc v2 task failed: {error}")
+
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+
+    raise Exception(f"DeepDoc v2 task timeout after {max_wait}s")
+
+
+def parse_with_deepdoc(file_path: str, api_url: str = None, need_image: bool = False,
+                       use_v2: bool = False, **kwargs) -> dict:
+    """统一入口：根据参数选择 v1 或 v2 API"""
+    if use_v2:
+        return parse_with_deepdoc_v2(file_path, api_url, need_image, **kwargs)
+    else:
+        return parse_with_deepdoc_v1(file_path, api_url, need_image)
 
 
 def extract_text_from_chunks(chunks: list) -> list:
@@ -278,6 +348,7 @@ def main():
     )
     parser.add_argument("--deepdoc-api", default=DEEPDOC_API, help="DeepDoc API 地址")
     parser.add_argument("--need-image", action="store_true", help="是否提取图片")
+    parser.add_argument("--use-v2", action="store_true", help="使用 v2 异步 API（需要 Redis 队列支持）")
 
     # Dify 直接上传选项
     parser.add_argument("--upload", action="store_true", help="直接上传到 Dify")
@@ -298,7 +369,8 @@ def main():
     doc_name = input_path.stem
 
     print(f"正在解析: {args.input_file}")
-    result = parse_with_deepdoc(args.input_file, api_url=deepdoc_api, need_image=args.need_image)
+    result = parse_with_deepdoc(args.input_file, api_url=deepdoc_api, need_image=args.need_image,
+                                use_v2=args.use_v2)
 
     chunk_count = len(result.get("chunks", []))
     print(f"解析完成: {chunk_count} 个文本块")

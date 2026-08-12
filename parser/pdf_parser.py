@@ -169,7 +169,12 @@ class RAGFlowPdfParser:
          把 PDF 按页拆分，提取文本框、表格、图像等结构。
         """
 
-        self.ocr = OCR()
+        ocr_engine = os.getenv("OCR_ENGINE", "rapidocr").lower()
+        if ocr_engine == "rapidocr":
+            from vision.rapidocr_wrapper import RapidOCREngine
+            self.ocr = RapidOCREngine()
+        else:
+            self.ocr = OCR()
         self.parallel_limiter = self.ocr.parallel_limiter  # 与 OCR 的并发限制保持一致
         self.ocr.parallel_limiter = None  # OCR 的并发由本解析器通过 self.parallel_limiter 统一控制
 

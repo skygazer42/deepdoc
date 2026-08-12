@@ -1,0 +1,65 @@
+INFO:     Started server process [1259931]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51428 - "GET /health HTTP/1.1" 200 OK
+2026-08-11 14:00:35,758 - api_service - INFO - 收到异步解析请求: contract.txt (类型: .txt, OCR: False)
+2026-08-11 14:00:35,771 - parser.task_queue - WARNING - Redis 不可用，降级为内存队列: Redis 连接失败: Error 111 connecting to localhost:6379. Connection refused.
+2026-08-11 14:00:35,771 - parser.task_queue - INFO - 初始化内存任务队列
+2026-08-11 14:00:35,772 - api_service - INFO - 内存队列模式：同步执行解析任务
+2026-08-11 14:00:35,772 - parser.worker - INFO - 开始后台解析: contract.txt (ocr=False)
+2026-08-11 14:00:35,772 - parser.worker - ERROR - 后台解析失败: contract.txt
+Traceback (most recent call last):
+  File "/data/temp4/deepdoc/parser/worker.py", line 71, in parse_document_task
+    from parser.plain_parser import PlainParser
+ModuleNotFoundError: No module named 'parser.plain_parser'
+INFO:     127.0.0.1:51582 - "POST /v2/parse HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/home/user/ENTER/lib/python3.10/site-packages/uvicorn/protocols/http/httptools_impl.py", line 421, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/home/user/ENTER/lib/python3.10/site-packages/uvicorn/middleware/proxy_headers.py", line 62, in __call__
+    return await self.app(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/applications.py", line 112, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/middleware/errors.py", line 187, in __call__
+    raise exc
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/middleware/errors.py", line 165, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/routing.py", line 714, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/routing.py", line 734, in app
+    await route.handle(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/routing.py", line 288, in handle
+    await self.app(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/routing.py", line 76, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/user/ENTER/lib/python3.10/site-packages/starlette/routing.py", line 73, in app
+    response = await f(request)
+  File "/home/user/ENTER/lib/python3.10/site-packages/fastapi/routing.py", line 327, in app
+    content = await serialize_response(
+  File "/home/user/ENTER/lib/python3.10/site-packages/fastapi/routing.py", line 176, in serialize_response
+    raise ResponseValidationError(
+fastapi.exceptions.ResponseValidationError: 1 validation errors:
+  {'type': 'missing', 'loc': ('response', 'message'), 'msg': 'Field required', 'input': {'task_id': 'sync', 'status': 'completed', 'result': {'success': False, 'error': "No module named 'parser.plain_parser'", 'engine': None, 'total_chunks': 0, 'chunks': [], 'truncated': 0}}}
+
+INFO:     127.0.0.1:42708 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42718 - "GET /docs HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1259931]

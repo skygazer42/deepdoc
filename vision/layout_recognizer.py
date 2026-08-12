@@ -250,3 +250,38 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
             "bbox": [float(t) for t in boxes[i].tolist()],
             "score": float(scores[i])
         } for i in indices]
+
+
+class LayoutRecognizer4DocLayoutYOLO(LayoutRecognizer4YOLOv10):
+    """DocLayout-YOLO (DocStructBench)，输出格式与 YOLOv10 相同 (1, 300, 6)。
+
+    - 通过 LAYOUT_MODEL_SIZE 环境变量选择输入尺寸：1024 / 768 / 640（默认 768，
+      在真实 PDF 上约 2x 加速且表格/图片/caption 检测无损失）。
+    - abandon 类（页眉/页脚/页码）映射为 Reference，复用 garbage_layouts 过滤，
+      比原模型的正则后过滤更可靠。
+    """
+    labels = [
+        "Title",           # 0: title
+        "Text",            # 1: plain text
+        "Reference",       # 2: abandon（页眉/页脚/页码 → garbage 过滤）
+        "Figure",          # 3: figure
+        "Figure caption",  # 4: figure_caption
+        "Table",           # 5: table
+        "Table caption",   # 6: table_caption
+        "Table caption",   # 7: table_footnote
+        "Equation",        # 8: isolate_formula
+        "Figure caption",  # 9: formula_caption
+    ]
+
+    def __init__(self, domain):
+        size = os.getenv("LAYOUT_MODEL_SIZE", "768")
+        if size not in ("1024", "768", "640"):
+            size = "768"
+        # 跳过 LayoutRecognizer4YOLOv10.__init__（它强制 domain="layout"），
+        # 直接以 doclayout 模型文件名初始化
+        LayoutRecognizer.__init__(self, f"layout_doclayout_{size}")
+        self.auto = False
+        self.scaleFill = False
+        self.scaleup = True
+        self.stride = 32
+        self.center = True

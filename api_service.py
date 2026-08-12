@@ -86,6 +86,7 @@ class ParseResult(BaseModel):
     chunks: List[dict]
     images: Optional[List[dict]] = None
     error: Optional[str] = None
+    engine: Optional[str] = None
 
 class HealthCheck(BaseModel):
     status: str
@@ -242,6 +243,28 @@ def precheck_plain_parser(temp_path: str) -> bool:
         return False
     return False
 
+
+def _pdf_chunk_to_api(ck) -> dict:
+    """统一 ParseChunk -> /parse API chunk dict。
+
+    旧引擎把位置标签 @@...## 内嵌进 text（每行 body+tag），上层用
+    parse_positions / strip_positions 提取位置与纯文本。这里保持同一格式：
+    text = 纯文本 + 标签，另附 tag / kind / meta 等结构化字段。
+    """
+    body = ck.clean_text if ck.clean_text else ck.text
+    if ck.tag and ck.tag not in body:
+        text = body + ck.tag
+    else:
+        text = body
+    payload = {"text": text}
+    if ck.tag:
+        payload["tag"] = ck.tag
+    if ck.kind and ck.kind != "text":
+        payload["kind"] = ck.kind
+    if ck.meta:
+        payload["meta"] = ck.meta
+    return payload
+
 # 解析器缓存：所有解析器共享同一批 ORT 推理会话（vision/ocr.py 的 loaded_models），
 # 但每个请求单独创建解析器实例，避免请求间共享有状态解析状态（boxes/page_images 等）。
 def get_parser(file_ext: str, use_ocr: bool = True):
@@ -320,8 +343,26 @@ async def parse_document(
     - total_chunks: 总块数
     - chunks: 解析结果块（限制为 max_chunks）
     - error: 错误信息（如果有）
+
+    Canary:
+    - 通过环境变量 CANARY_PERCENT 控制 v2 API 流量百分比
+    - CANARY_FORCE_V2=1 强制使用 v2
+    - CANARY_FORCE_V1=1 强制使用 v1（回滚）
     """
     temp_path = None
+
+    # Canary 分流：判断是否使用 v2 API
+    from parser.canary import should_use_v2, get_canary_config
+    import uuid
+    request_id = str(uuid.uuid4())
+    use_v2 = should_use_v2(request_id)
+
+    if use_v2:
+        logger.info("Canary: 路由到 v2 API (request_id=%s)", request_id)
+        # 转发到 v2 端点
+        return await parse_document_async(file, use_ocr, need_image, zoomin, max_chunks)
+    else:
+        logger.debug("Canary: 路由到 v1 API (request_id=%s)", request_id)
 
     try:
         # 校验文件类型（未上传文件 / 无扩展名 -> 400）
@@ -355,37 +396,33 @@ async def parse_document(
 
         logger.info(f"文件已保存到临时路径: {temp_path}")
 
-        # 获取解析器
-        parser = get_parser(file_ext, use_ocr)
+        # 获取解析器（PDF 由三步路由取代 get_parser，其他格式不变）
+        if file_ext == ".pdf":
+            parser = None
+        else:
+            parser = get_parser(file_ext, use_ocr)
 
         # 解析文档（CPU 推理在后台线程池执行，不阻塞事件循环）
         media_results = []
+        pdf_doc = None
         if file_ext == '.pdf':
+            # ---- 三层路由：统一结果模型 ParseDocument ----
             if use_ocr:
-                # 若 PDF 有可编辑文本层则走快速路径，否则回落到 OCR 全量解析
-                if await _run_sync(precheck_plain_parser, temp_path):
-                    lines, tags = await _run_sync(
-                        parser, temp_path) if isinstance(parser, PlainParser) else await _run_sync(PlainParser(), temp_path)
-                    text_part = [{"text": line, "tag": tag} for line, tag in lines]
-                else:
-                    try:
-                        parsed = await _run_sync(
-                            parser, temp_path, need_image=need_image,
-                            zoomin=zoomin, need_position=need_image)
-                    except Exception as e:
-                        raise OCRFailureError(f"OCR 解析失败: {e}") from e
-                    if isinstance(parsed, tuple) and len(parsed) == 2:
-                        text_part, media_results = parsed
-                    else:
-                        text_part = parsed
-                    if not need_image:
-                        media_results = []
+                from parser.fast_pdf import parse_pdf_document
+                pdf_doc = await _run_sync(
+                    parse_pdf_document, temp_path, need_image=need_image)
             else:
-                text_part, _ = await _run_sync(parser, temp_path)
-                # PlainParser 返回 (line, tag) 元组
-                text_part = [{"text": line, "tag": tag} for line, tag in text_part]
-                if not any(c["text"].strip() for c in text_part):
-                    raise NoTextFoundError("PDF 未提取到任何文本")
+                # use_ocr=False：不调用任何 OCR 模型（ocr_depth=skip）
+                from parser.fast_pdf import parse_pdf_document, ModelConfig
+                cfg_no_ocr = ModelConfig.from_env()
+                cfg_no_ocr.ocr_depth = "skip"
+                pdf_doc = await _run_sync(
+                    parse_pdf_document, temp_path, cfg=cfg_no_ocr,
+                    need_image=False)
+                if pdf_doc.error:
+                    # 未请求 OCR 且文档为纯扫描页 -> 无文本（与旧 PlainParser
+                    # 空文本行为一致，NoTextFoundError(200)）
+                    raise NoTextFoundError(pdf_doc.error)
         elif file_ext in ['.docx', '.doc']:
             text_part = await _run_sync(parser, temp_path)
         elif file_ext in ['.xlsx', '.xls', '.csv']:
@@ -400,24 +437,52 @@ async def parse_document(
             raise ValueError(f"不支持的文件类型: {file_ext}")
 
         # 处理文本结果
-        if isinstance(text_part, str):
+        if pdf_doc is not None:
+            # ---- 三层路由（ParseDocument -> API chunks）----
+            if pdf_doc.error:
+                # 解析器内部失败：统一映射到稳定的失败响应
+                raise CorruptFileError(pdf_doc.error)
+            iterable = pdf_doc.chunks
+            media_results = []
+            if need_image and pdf_doc.media:
+                # 统一媒体 dict（{"image": PIL, "kind", "positions", "meta"}）
+                # 收敛为旧 API 的 ((img, meta), positions) 元组形态，复用下方编码
+                media_items = []
+                for m in pdf_doc.media:
+                    img = m.get("image")
+                    if img is None:
+                        continue
+                    media_items.append(
+                        ((img, m.get("meta") or ""), m.get("positions")))
+                media_results = media_items
+        elif isinstance(text_part, str):
             iterable = [text_part]
         elif isinstance(text_part, tuple):
             iterable = list(text_part)
         else:
             iterable = text_part
 
-        # total_chunks 反映真实块数（不受 max_chunks 截断影响）
-        try:
-            total_chunks = len(iterable) if hasattr(iterable, "__len__") else 0
-        except Exception:
-            total_chunks = 0
+        # total_chunks 反映真实块数（不受 max_chunks 截断影响）。
+        # 三层路由的 ParseDocument 已产出全量块；内部截断仅作用于返回列表。
+        if pdf_doc is not None:
+            total_chunks = len(pdf_doc.chunks) + pdf_doc.stats.get(
+                "truncated", 0)
+        else:
+            try:
+                total_chunks = len(iterable) if hasattr(iterable, "__len__") else 0
+            except Exception:
+                total_chunks = 0
 
         chunks = []
         for i, chunk in enumerate(iterable):
             if i >= max_chunks:
                 break
-            if isinstance(chunk, dict):
+            if pdf_doc is not None:
+                # 统一 ParseChunk -> API chunk dict（含位置标签）
+                api_ck = _pdf_chunk_to_api(chunk)
+                api_ck["index"] = i
+                ck = api_ck
+            elif isinstance(chunk, dict):
                 ck = {"index": i, **chunk}
             elif isinstance(chunk, str):
                 ck = {"text": chunk, "index": i}
@@ -464,7 +529,14 @@ async def parse_document(
                     logger.warning(f"图片处理失败: {e}")
                     continue
 
-        logger.info(f"解析完成: {file.filename}, 共 {total_chunks} 个块")
+        # 日志只记录文件名/哈希/统计，不记录正文内容
+        if pdf_doc is not None:
+            logger.info(
+                "解析完成: %s sha256=%s engine=%s chunks=%d/%d pages=%d",
+                file.filename, pdf_doc.doc_sha256 or "-", pdf_doc.engine,
+                len(chunks), total_chunks, pdf_doc.total_pages)
+        else:
+            logger.info(f"解析完成: {file.filename}, 共 {total_chunks} 个块")
 
         return ParseResult(
             success=True,
@@ -472,7 +544,8 @@ async def parse_document(
             file_type=file_ext,
             total_chunks=total_chunks,
             chunks=chunks,
-            images=images_payload or None
+            images=images_payload or None,
+            engine=pdf_doc.engine if pdf_doc is not None else None
         )
 
     except ParseError as e:
@@ -537,6 +610,231 @@ async def get_supported_formats():
     return {
         "formats": list(SUPPORTED_TYPES.keys()),
         "count": len(SUPPORTED_TYPES)
+    }
+
+
+# ============================================================
+# /v2 异步 API（升级计划 Step 4）
+# ============================================================
+
+from parser.task_queue import get_queue, TaskStatus
+
+# 全局任务队列（延迟初始化）
+_task_queue = None
+
+
+def get_task_queue():
+    """获取任务队列单例"""
+    global _task_queue
+    if _task_queue is None:
+        _task_queue = get_queue()
+    return _task_queue
+
+
+class ParseTaskResponse(BaseModel):
+    """异步任务提交响应"""
+    task_id: str
+    status: str
+    message: str
+
+
+class ParseSyncResponse(BaseModel):
+    """同步执行响应（内存队列模式）"""
+    task_id: str
+    status: str
+    message: str
+    result: Optional[dict] = None
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态响应"""
+    task_id: str
+    status: str
+    created_at: Optional[float] = None
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None
+    error: Optional[str] = None
+
+
+class TaskResultResponse(BaseModel):
+    """任务结果响应"""
+    task_id: str
+    status: str
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
+
+@app.post("/v2/parse")
+async def parse_document_async(
+    file: UploadFile = File(...),
+    use_ocr: bool = Form(default=True),
+    need_image: bool = Form(default=False),
+    zoomin: int = Form(default=3),
+    max_chunks: int = Form(default=100)
+):
+    """
+    异步解析文档接口（/v2）
+
+    提交解析任务到后台队列，立即返回 task_id。
+    使用 /v2/status/{task_id} 查询任务状态。
+    使用 /v2/result/{task_id} 获取结果。
+
+    参数与 /parse 相同。
+    """
+    temp_path = None
+
+    try:
+        # 校验文件类型
+        if not file or not file.filename:
+            raise InvalidFileTypeError("未上传文件或文件名为空")
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in SUPPORTED_TYPES:
+            raise InvalidFileTypeError(
+                f"不支持的文件类型: {file_ext}. 支持的格式: {list(SUPPORTED_TYPES.keys())}"
+            )
+
+        logger.info("收到异步解析请求: %s (类型: %s, OCR: %s)", file.filename, file_ext, use_ocr)
+
+        # 保存上传的文件到临时目录
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            temp_path = tmp.name
+
+        # 文件大小限制
+        if len(content) > MAX_FILE_SIZE_BYTES:
+            os.unlink(temp_path)
+            raise FileTooLargeError(
+                f"文件过大: {len(content)} 字节，超过限制 {MAX_FILE_SIZE_BYTES} 字节"
+            )
+
+        # PDF 轻量预检
+        if file_ext == ".pdf":
+            precheck_err = classify_pdf_failure(temp_path)
+            if precheck_err is not None:
+                os.unlink(temp_path)
+                raise precheck_err
+
+        # 提交到任务队列
+        queue = get_task_queue()
+        from parser.worker import parse_document_task
+        from parser.task_queue import InMemoryQueue
+
+        # 内存队列模式：同步执行并返回结果（开发/测试用）
+        if isinstance(queue, InMemoryQueue):
+            logger.info("内存队列模式：同步执行解析任务")
+            result = await _run_sync(
+                parse_document_task, temp_path, file.filename, use_ocr, max_chunks)
+            return ParseSyncResponse(
+                task_id="sync",
+                status="completed",
+                message="同步执行完成",
+                result=result,
+            )
+
+        # Redis 队列模式：异步提交任务
+        task_id = queue.enqueue(
+            func=parse_document_task,
+            args=(temp_path, file.filename, use_ocr, max_chunks),
+        )
+
+        logger.info("任务已提交: task_id=%s file=%s", task_id, file.filename)
+
+        return ParseTaskResponse(
+            task_id=task_id,
+            status="pending",
+            message="任务已提交，使用 /v2/status/{task_id} 查询状态"
+        )
+
+    except ParseError as e:
+        logger.warning("异步解析请求失败: %s, %s", file.filename if file else "unknown", e.error)
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"error": e.error}
+        )
+    except Exception as e:
+        logger.error("异步解析提交失败: %s, %s", file.filename if file else "unknown", str(e), exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"内部错误: {str(e)}"}
+        )
+
+
+@app.get("/v2/status/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str):
+    """
+    查询异步任务状态
+
+    返回:
+    - task_id: 任务 ID
+    - status: pending / processing / completed / failed
+    - created_at: 创建时间戳
+    - started_at: 开始时间戳
+    - completed_at: 完成时间戳
+    - error: 错误信息（如果失败）
+    """
+    queue = get_task_queue()
+    status = queue.get_status(task_id)
+
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    return TaskStatusResponse(
+        task_id=status["task_id"],
+        status=status["status"],
+        created_at=status.get("created_at"),
+        started_at=status.get("started_at"),
+        completed_at=status.get("completed_at"),
+        error=status.get("error"),
+    )
+
+
+@app.get("/v2/result/{task_id}", response_model=TaskResultResponse)
+async def get_task_result(task_id: str):
+    """
+    获取异步任务结果
+
+    如果任务尚未完成，返回 status=pending/processing。
+    如果任务完成，返回完整解析结果。
+    如果任务失败，返回 error。
+    """
+    queue = get_task_queue()
+    status = queue.get_status(task_id)
+
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    if status["status"] == TaskStatus.COMPLETED.value:
+        result = queue.get_result(task_id)
+        return TaskResultResponse(
+            task_id=task_id,
+            status="completed",
+            result=result,
+        )
+    elif status["status"] == TaskStatus.FAILED.value:
+        return TaskResultResponse(
+            task_id=task_id,
+            status="failed",
+            error=status.get("error"),
+        )
+    else:
+        return TaskResultResponse(
+            task_id=task_id,
+            status=status["status"],
+        )
+
+
+@app.get("/v2/queue")
+async def get_queue_info():
+    """
+    获取队列状态信息
+
+    返回当前队列中的任务数量。
+    """
+    queue = get_task_queue()
+    return {
+        "queue_size": queue.queue_size(),
+        "backend": type(queue).__name__,
     }
 
 if __name__ == "__main__":

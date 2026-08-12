@@ -1,0 +1,511 @@
+{
+  "engine": "fast (v2 three-tier)",
+  "generated": "2026-08-11T13:46:25",
+  "docs": [
+    {
+      "name": "editable_single.pdf",
+      "size_kb": 16340.3,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "fitz_fast",
+      "total_chunks": 48,
+      "returned_chunks": 48,
+      "chunk_loss": 0,
+      "elapsed_s": 0.276
+    },
+    {
+      "name": "editable_twocol.pdf",
+      "size_kb": 16340.3,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "fitz_fast",
+      "total_chunks": 48,
+      "returned_chunks": 48,
+      "chunk_loss": 0,
+      "elapsed_s": 0.244
+    },
+    {
+      "name": "editable_10p.pdf",
+      "size_kb": 16356.6,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "fitz_fast",
+      "total_chunks": 120,
+      "returned_chunks": 100,
+      "chunk_loss": 20,
+      "elapsed_s": 0.299
+    },
+    {
+      "name": "scan_2p.pdf",
+      "size_kb": 6373.0,
+      "expect": "ocr",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "slow_full",
+      "total_chunks": 24,
+      "returned_chunks": 24,
+      "chunk_loss": 0,
+      "elapsed_s": 40.635
+    },
+    {
+      "name": "scan_4p.pdf",
+      "size_kb": 6373.7,
+      "expect": "ocr",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "slow_full",
+      "total_chunks": 44,
+      "returned_chunks": 44,
+      "chunk_loss": 0,
+      "elapsed_s": 81.102
+    },
+    {
+      "name": "mixed_3p.pdf",
+      "size_kb": 22704.4,
+      "expect": "ocr_or_text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "hybrid",
+      "total_chunks": 21,
+      "returned_chunks": 21,
+      "chunk_loss": 0,
+      "elapsed_s": 20.779
+    },
+    {
+      "name": "table_ruled.pdf",
+      "size_kb": 16347.1,
+      "expect": "table",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "hybrid",
+      "total_chunks": 20,
+      "returned_chunks": 20,
+      "chunk_loss": 0,
+      "elapsed_s": 0.228
+    },
+    {
+      "name": "table_borderless.pdf",
+      "size_kb": 16341.8,
+      "expect": "table",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "fitz_fast",
+      "total_chunks": 82,
+      "returned_chunks": 82,
+      "chunk_loss": 0,
+      "elapsed_s": 0.188
+    },
+    {
+      "name": "table_merged.pdf",
+      "size_kb": 16337.0,
+      "expect": "table",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "hybrid",
+      "total_chunks": 10,
+      "returned_chunks": 10,
+      "chunk_loss": 0,
+      "elapsed_s": 0.267
+    },
+    {
+      "name": "table_crosspage.pdf",
+      "size_kb": 16336.8,
+      "expect": "table",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "fitz_fast",
+      "total_chunks": 44,
+      "returned_chunks": 44,
+      "chunk_loss": 0,
+      "elapsed_s": 0.282
+    },
+    {
+      "name": "contract.docx",
+      "size_kb": 36.4,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": null,
+      "total_chunks": 2,
+      "returned_chunks": 2,
+      "chunk_loss": 0,
+      "elapsed_s": 0.032
+    },
+    {
+      "name": "contract.xlsx",
+      "size_kb": 6.9,
+      "expect": "table",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": null,
+      "total_chunks": 40,
+      "returned_chunks": 40,
+      "chunk_loss": 0,
+      "elapsed_s": 0.013
+    },
+    {
+      "name": "contract.pptx",
+      "size_kb": 31.3,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": null,
+      "total_chunks": 4,
+      "returned_chunks": 4,
+      "chunk_loss": 0,
+      "elapsed_s": 0.018
+    },
+    {
+      "name": "contract.txt",
+      "size_kb": 0.8,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": null,
+      "total_chunks": 3,
+      "returned_chunks": 3,
+      "chunk_loss": 0,
+      "elapsed_s": 0.179
+    },
+    {
+      "name": "contract.html",
+      "size_kb": 1.0,
+      "expect": "text",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": null,
+      "total_chunks": 22,
+      "returned_chunks": 22,
+      "chunk_loss": 0,
+      "elapsed_s": 0.005
+    },
+    {
+      "name": "encrypted.pdf",
+      "size_kb": 1.3,
+      "expect": "err_422",
+      "status_code": 422,
+      "success": false,
+      "error": "PDF 已加密，需要密码",
+      "engine": null,
+      "total_chunks": 0,
+      "returned_chunks": 0,
+      "chunk_loss": 0,
+      "elapsed_s": 0.008
+    },
+    {
+      "name": "corrupt.pdf",
+      "size_kb": 0.0,
+      "expect": "err_400",
+      "status_code": 400,
+      "success": false,
+      "error": "不是有效的 PDF 文件（缺少 %PDF 头）",
+      "engine": null,
+      "total_chunks": 0,
+      "returned_chunks": 0,
+      "chunk_loss": 0,
+      "elapsed_s": 0.002
+    },
+    {
+      "name": "empty.pdf",
+      "size_kb": 0.0,
+      "expect": "err_400",
+      "status_code": 400,
+      "success": false,
+      "error": "文件为空",
+      "engine": null,
+      "total_chunks": 0,
+      "returned_chunks": 0,
+      "chunk_loss": 0,
+      "elapsed_s": 0.001
+    },
+    {
+      "name": "noext",
+      "size_kb": 0.0,
+      "expect": "err_400",
+      "status_code": 400,
+      "success": false,
+      "error": "不支持的文件类型: . 支持的格式: ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt', '.html', '.htm', '.txt', '.md']",
+      "engine": null,
+      "total_chunks": 0,
+      "returned_chunks": 0,
+      "chunk_loss": 0,
+      "elapsed_s": 0.002
+    },
+    {
+      "name": "picture.pdf",
+      "size_kb": 6372.7,
+      "expect": "ocr",
+      "status_code": 200,
+      "success": true,
+      "error": null,
+      "engine": "slow_full",
+      "total_chunks": 11,
+      "returned_chunks": 11,
+      "chunk_loss": 0,
+      "elapsed_s": 19.669
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "ok": 16,
+    "err": 4,
+    "error_names": [
+      "encrypted.pdf",
+      "corrupt.pdf",
+      "empty.pdf",
+      "noext"
+    ],
+    "total_pages": 48,
+    "elapsed_total_s": 164.229,
+    "chunk_loss_total": 20,
+    "rss_peak_mb": 40.9,
+    "errors": []
+  },
+  "comparison": {
+    "docs_compared": 20,
+    "rows": [
+      {
+        "name": "editable_single.pdf",
+        "base_s": 0.846,
+        "fast_s": 0.276,
+        "speedup_x": 3.07,
+        "engine": "fitz_fast",
+        "chunk_parity": true,
+        "base_chunks": 48,
+        "fast_chunks": 48
+      },
+      {
+        "name": "editable_twocol.pdf",
+        "base_s": 0.838,
+        "fast_s": 0.244,
+        "speedup_x": 3.43,
+        "engine": "fitz_fast",
+        "chunk_parity": true,
+        "base_chunks": 48,
+        "fast_chunks": 48
+      },
+      {
+        "name": "editable_10p.pdf",
+        "base_s": 1.935,
+        "fast_s": 0.299,
+        "speedup_x": 6.47,
+        "engine": "fitz_fast",
+        "chunk_parity": true,
+        "base_chunks": 120,
+        "fast_chunks": 120
+      },
+      {
+        "name": "scan_2p.pdf",
+        "base_s": 3.26,
+        "fast_s": 40.635,
+        "speedup_x": 0.08,
+        "engine": "slow_full",
+        "chunk_parity": false,
+        "base_chunks": 1,
+        "fast_chunks": 24
+      },
+      {
+        "name": "scan_4p.pdf",
+        "base_s": 6.71,
+        "fast_s": 81.102,
+        "speedup_x": 0.08,
+        "engine": "slow_full",
+        "chunk_parity": false,
+        "base_chunks": 1,
+        "fast_chunks": 44
+      },
+      {
+        "name": "mixed_3p.pdf",
+        "base_s": 0.69,
+        "fast_s": 20.779,
+        "speedup_x": 0.03,
+        "engine": "hybrid",
+        "chunk_parity": false,
+        "base_chunks": 11,
+        "fast_chunks": 21
+      },
+      {
+        "name": "table_ruled.pdf",
+        "base_s": 0.656,
+        "fast_s": 0.228,
+        "speedup_x": 2.88,
+        "engine": "hybrid",
+        "chunk_parity": true,
+        "base_chunks": 20,
+        "fast_chunks": 20
+      },
+      {
+        "name": "table_borderless.pdf",
+        "base_s": 0.647,
+        "fast_s": 0.188,
+        "speedup_x": 3.44,
+        "engine": "fitz_fast",
+        "chunk_parity": false,
+        "base_chunks": 18,
+        "fast_chunks": 82
+      },
+      {
+        "name": "table_merged.pdf",
+        "base_s": 0.656,
+        "fast_s": 0.267,
+        "speedup_x": 2.46,
+        "engine": "hybrid",
+        "chunk_parity": true,
+        "base_chunks": 10,
+        "fast_chunks": 10
+      },
+      {
+        "name": "table_crosspage.pdf",
+        "base_s": 0.626,
+        "fast_s": 0.282,
+        "speedup_x": 2.22,
+        "engine": "fitz_fast",
+        "chunk_parity": false,
+        "base_chunks": 12,
+        "fast_chunks": 44
+      },
+      {
+        "name": "contract.docx",
+        "base_s": 0.027,
+        "fast_s": 0.032,
+        "speedup_x": 0.84,
+        "engine": null,
+        "chunk_parity": true,
+        "base_chunks": 2,
+        "fast_chunks": 2
+      },
+      {
+        "name": "contract.xlsx",
+        "base_s": 0.01,
+        "fast_s": 0.013,
+        "speedup_x": 0.77,
+        "engine": null,
+        "chunk_parity": true,
+        "base_chunks": 40,
+        "fast_chunks": 40
+      },
+      {
+        "name": "contract.pptx",
+        "base_s": 0.016,
+        "fast_s": 0.018,
+        "speedup_x": 0.89,
+        "engine": null,
+        "chunk_parity": true,
+        "base_chunks": 4,
+        "fast_chunks": 4
+      },
+      {
+        "name": "contract.txt",
+        "base_s": 2.037,
+        "fast_s": 0.179,
+        "speedup_x": 11.38,
+        "engine": null,
+        "chunk_parity": true,
+        "base_chunks": 3,
+        "fast_chunks": 3
+      },
+      {
+        "name": "contract.html",
+        "base_s": 0.005,
+        "fast_s": 0.005,
+        "speedup_x": 1.0,
+        "engine": null,
+        "chunk_parity": true,
+        "base_chunks": 22,
+        "fast_chunks": 22
+      },
+      {
+        "name": "encrypted.pdf",
+        "base_status": 422,
+        "fast_status": 422,
+        "base_err": "PDF 已加密，需要密码",
+        "fast_err": "PDF 已加密，需要密码"
+      },
+      {
+        "name": "corrupt.pdf",
+        "base_status": 400,
+        "fast_status": 400,
+        "base_err": "不是有效的 PDF 文件（缺少 %PDF 头）",
+        "fast_err": "不是有效的 PDF 文件（缺少 %PDF 头）"
+      },
+      {
+        "name": "empty.pdf",
+        "base_status": 400,
+        "fast_status": 400,
+        "base_err": "文件为空",
+        "fast_err": "文件为空"
+      },
+      {
+        "name": "noext",
+        "base_status": 400,
+        "fast_status": 400,
+        "base_err": "不支持的文件类型: . 支持的格式: ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt', '.html', '.htm', '.txt', '.md']",
+        "fast_err": "不支持的文件类型: . 支持的格式: ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.pptx', '.ppt', '.html', '.htm', '.txt', '.md']"
+      },
+      {
+        "name": "picture.pdf",
+        "base_s": 2.328,
+        "fast_s": 19.669,
+        "speedup_x": 0.12,
+        "engine": "slow_full",
+        "chunk_parity": false,
+        "base_chunks": 1,
+        "fast_chunks": 11
+      }
+    ],
+    "checks": {
+      "fitz_fast_<=0.5s_per_page": "PASS",
+      "over_threshold": [],
+      "fitz_chunk_parity": 14,
+      "fitz_chunk_mismatch": [
+        "table_borderless.pdf",
+        "table_crosspage.pdf"
+      ],
+      "other_chunk_diff": [
+        {
+          "name": "scan_2p.pdf",
+          "engine": "slow_full",
+          "base": 1,
+          "fast": 24
+        },
+        {
+          "name": "scan_4p.pdf",
+          "engine": "slow_full",
+          "base": 1,
+          "fast": 44
+        },
+        {
+          "name": "mixed_3p.pdf",
+          "engine": "hybrid",
+          "base": 11,
+          "fast": 21
+        },
+        {
+          "name": "picture.pdf",
+          "engine": "slow_full",
+          "base": 1,
+          "fast": 11
+        }
+      ],
+      "chunk_loss_total": 20
+    }
+  }
+}
