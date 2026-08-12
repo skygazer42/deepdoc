@@ -30,7 +30,13 @@ else:
     from .layout_recognizer import LayoutRecognizer4YOLOv10 as LayoutRecognizer
 from .ocr import OCR
 from .rapidocr_wrapper import RapidOCREngine
-from .table_structure_recognizer import TableStructureRecognizer
+from .table_structure_recognizer import TableStructureRecognizer, TableStructureRecognizer4SLANet
+
+# 表格结构识别引擎选择：
+#   TABLE_ENGINE=slanet → SLANet-plus (端到端单元格检测，合并单元格识别)
+#   默认 → YOLO tsr.onnx
+if os.getenv("TABLE_ENGINE", "").lower() == "slanet":
+    TableStructureRecognizer = TableStructureRecognizer4SLANet
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:

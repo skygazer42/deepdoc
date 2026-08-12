@@ -591,3 +591,138 @@ class TableStructureRecognizer(Recognizer):
                 tbl[rowspan[0]][colspan[0]] = arr
 
         return tbl
+
+
+class TableStructureRecognizer4SLANet:
+    """SLANet-plus 表格结构识别器，输出格式与 TableStructureRecognizer 兼容。
+
+    通过 rapid_table (RapidTable) ONNX 推理获得单元格坐标和逻辑结构，
+    转换为行/列/合并单元格的 labeled boxes 供下游 construct_table() 使用。
+
+    切换方式: TABLE_ENGINE=slanet（默认使用 YOLO tsr.onnx）。
+    """
+
+    labels = [
+        "table",
+        "table column",
+        "table row",
+        "table column header",
+        "table projected row header",
+        "table spanning cell",
+    ]
+
+    # 复用静态方法（is_caption / blockType / construct_table 等逻辑不变）
+    is_caption = staticmethod(TableStructureRecognizer.is_caption)
+    blockType = staticmethod(TableStructureRecognizer.blockType)
+    construct_table = staticmethod(TableStructureRecognizer.construct_table)
+
+    def __init__(self):
+        import threading
+        self._init_lock = threading.Lock()
+        self._engine = None
+        logging.info("TableStructureRecognizer4SLANet: will lazily init SLANet-plus ONNX")
+
+    def _get_engine(self):
+        if self._engine is not None:
+            return self._engine
+        with self._init_lock:
+            if self._engine is not None:
+                return self._engine
+            from rapid_table import RapidTable, RapidTableInput, ModelType, EngineType
+            logging.info("初始化 SLANet-plus (ONNX) ...")
+            self._engine = RapidTable(RapidTableInput(
+                model_type=ModelType.SLANETPLUS,
+                engine_type=EngineType.ONNXRUNTIME,
+                use_ocr=False,  # 仅表格结构，OCR 由 RapidOCR 管道单独处理
+            ))
+            logging.info("SLANet-plus 初始化完成")
+            return self._engine
+
+    def __call__(self, images, thr=0.2):
+        """对裁剪后的表格图像列表运行 SLANet-plus，返回与 YOLO TSR 同格式的结果。
+
+        列框采用各 cell 该列的并集，同时压缩列框宽为最大 cell 宽以避免
+        列间重叠导致 find_horizontally_tightest_fit 匹配失败。
+        """
+        import cv2
+        engine = self._get_engine()
+        results = []
+
+        for table_idx, pil_img in enumerate(images):
+            img = cv2.cvtColor(np.array(pil_img.convert("RGB")), cv2.COLOR_RGB2BGR)
+            output = engine(img)
+
+            if not output.cell_bboxes or len(output.cell_bboxes[0]) == 0:
+                results.append([])
+                continue
+
+            cells = output.cell_bboxes[0]          # (N, 8) 四边形 8 坐标
+            logic = output.logic_points[0]          # (N, 4): [startRow, endRow, startCol, endCol]
+
+            n_rows = int(logic[:, 1].max()) + 1
+            n_cols = int(logic[:, 3].max()) + 1
+
+            tbl_boxes = []
+
+            # ── 每逻辑行一个 "table row"（覆盖该行所有 cell，避免行间重叠） ──
+            for r in range(n_rows):
+                row_idx = [i for i, lp in enumerate(logic) if lp[0] <= r <= lp[1]]
+                if not row_idx:
+                    continue
+                row_x0 = float(min(cells[i, 0::2].min() for i in row_idx))
+                row_x1 = float(max(cells[i, 0::2].max() for i in row_idx))
+                row_top = float(min(cells[i, 1::2].min() for i in row_idx))
+                row_bott = float(max(cells[i, 1::2].max() for i in row_idx))
+                # 判断是否为 header 行（所有单元格都是 header）
+                is_header = all(logic[i, 0] == 0 and logic[i, 1] == 0 for i in row_idx)
+                lbl = "table column header" if (is_header and r == 0) else "table row"
+                tbl_boxes.append({
+                    "label": lbl, "score": 0.9,
+                    "x0": row_x0, "x1": row_x1,
+                    "top": row_top, "bottom": row_bott,
+                })
+
+            # ── 合并单元格标记 ──
+            for i, lp in enumerate(logic):
+                if lp[0] != lp[1] or lp[2] != lp[3]:
+                    tbl_boxes.append({
+                        "label": "table spanning cell", "score": 0.9,
+                        "x0": float(cells[i, 0::2].min()), "x1": float(cells[i, 0::2].max()),
+                        "top": float(cells[i, 1::2].min()), "bottom": float(cells[i, 1::2].max()),
+                    })
+
+            # ── 每列一个 "table column" 框（用最大 cell 宽避免跨列重叠） ──
+            for c in range(n_cols):
+                col_indices = [i for i, lp in enumerate(logic) if lp[2] <= c <= lp[3]]
+                if not col_indices:
+                    continue
+                # 取该列所有 cell 的并集作为列范围
+                x0 = min(float(cells[i, 0::2].min()) for i in col_indices)
+                x1 = max(float(cells[i, 0::2].max()) for i in col_indices)
+                top = min(float(cells[i, 1::2].min()) for i in col_indices)
+                bott = max(float(cells[i, 1::2].max()) for i in col_indices)
+                # 压缩列宽：用该列 cell 的 x 范围并集，但避免超过相邻列的中心
+                # 实际上，从并集稍微收窄以避免重叠
+                cell_max_w = max(float(cells[i, 0::2].max() - cells[i, 0::2].min()) for i in col_indices)
+                col_center = (x0 + x1) / 2
+                x0 = max(x0, col_center - cell_max_w)
+                x1 = min(x1, col_center + cell_max_w)
+                tbl_boxes.append({
+                    "label": "table column", "score": 0.9,
+                    "x0": x0, "x1": x1, "top": top, "bottom": bott,
+                })
+
+            # 添加整体 "table" 框（标记整个表格区域）
+            all_x0 = float(cells[:, 0::2].min())
+            all_x1 = float(cells[:, 0::2].max())
+            all_top = float(cells[:, 1::2].min())
+            all_bott = float(cells[:, 1::2].max())
+            tbl_boxes.append({
+                "label": "table", "score": 0.99,
+                "x0": all_x0, "x1": all_x1,
+                "top": all_top, "bottom": all_bott,
+            })
+
+            results.append(tbl_boxes)
+
+        return results
