@@ -636,6 +636,53 @@ class RAGFlowPdfParser:
             bxs.pop(i + 1)
         self.boxes = bxs
 
+    def _precollect_updown_prob(self, boxes):
+        """预扫描 _concat_downward 中所有可能到达模型预测的上下候选对，
+        一次性批量推理（替代原逐条 xgb.DMatrix+predict），返回 {(idx_up, idx_down): prob}。
+
+        过滤条件与 dfs 中到达模型预测前的剪枝严格一致（y 距离 break + 文本/几何 continue），
+        因此候选集是 dfs 实际评估对（G）的超集：G ⊆ C。批量 predict 与逐条 predict
+        数值逐位一致（已验证 max dev = 0），合并决策完全等价。
+        """
+        n = len(boxes)
+        cand = []  # (idx_up, idx_down, fea)
+        for i in range(n):
+            up = boxes[i]
+            mh = self.mean_height[up["page_number"] - 1]
+            mw = self.mean_width[up["page_number"] - 1]
+            for j in range(i + 1, n):
+                down = boxes[j]
+                smpg = up["page_number"] == down["page_number"]
+                ydis = self._y_dis(up, down)
+                if smpg and ydis > mh * 4:
+                    break
+                if not smpg and ydis > mh * 16:
+                    break
+                # 空文本框：DFS 中 up 为空会 IndexError、down 为空会被 continue，
+                # 二者均不会到达模型预测，故预扫描直接跳过（不破坏 G ⊆ C）
+                if not up.get("text") or not down.get("text"):
+                    continue
+                if up.get("R", "") != down.get(
+                        "R", "") and up["text"][-1] != "，":
+                    continue
+                if re.match(r"[0-9]{2,3}/[0-9]{3}$", up["text"]) \
+                        or re.match(r"[0-9]{2,3}/[0-9]{3}$", down["text"]) \
+                        or not down["text"].strip():
+                    continue
+                if not down["text"].strip() or not up["text"].strip():
+                    continue
+                if up["x1"] < down["x0"] - 10 * mw \
+                        or up["x0"] > down["x1"] + 10 * mw:
+                    continue
+                cand.append((i, j, self._updown_concat_features(up, down)))
+        updown_prob = {}
+        if cand:
+            fea_arr = np.array([f for _, _, f in cand], dtype=np.float32)
+            probs = self.updown_cnt_mdl.inplace_predict(fea_arr)
+            for (i, j, _), p in zip(cand, probs):
+                updown_prob[(i, j)] = p
+        return updown_prob
+
     def _concat_downward(self, concat_between_pages=True):
         # 为每个框统计其所在行的其他框数量（作为特征）
         for i in range(len(self.boxes)):
@@ -655,6 +702,10 @@ class RAGFlowPdfParser:
 
         # 进行跨行合并（深度优先合并）
         boxes = deepcopy(self.boxes)
+        # 预扫描所有可能到达模型预测的候选对，一次性批量推理
+        for _i, _b in enumerate(boxes):
+            _b["_cidx"] = _i
+        updown_prob = self._precollect_updown_prob(boxes)
         blocks = []
         while boxes:
             chunks = []
@@ -704,9 +755,8 @@ class RAGFlowPdfParser:
                         i += 1
                         continue
 
-                    fea = self._updown_concat_features(up, down)
-                    if self.updown_cnt_mdl.predict(
-                            xgb.DMatrix([fea]))[0] <= 0.5:
+                    # 模型预测查表（概率已在预扫描阶段批量推理）
+                    if updown_prob[(up["_cidx"], down["_cidx"])] <= 0.5:
                         i += 1
                         continue
                     dfs(down, i + 1)
