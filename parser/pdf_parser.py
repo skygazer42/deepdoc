@@ -41,7 +41,9 @@ from vision import OCR, LayoutRecognizer, TableStructureRecognizer
 from vision.recognizer import Recognizer
 
 LIGHTEN = int(os.getenv("LIGHTEN", "0"))  # 结果是 0
-PARALLEL_DEVICES = 0  # cuda torch
+# OCR 页间并发由 __init__ 运行时决定（环境变量 OCR_PARALLEL，默认 4），
+# 原 PARALLEL_DEVICES=0 表示纯串行（cuda torch 场景），此处保留历史常量。
+PARALLEL_DEVICES = 0
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -175,7 +177,14 @@ class RAGFlowPdfParser:
             self.ocr = RapidOCREngine()
         else:
             self.ocr = OCR()
-        self.parallel_limiter = self.ocr.parallel_limiter  # 与 OCR 的并发限制保持一致
+        # 页间 OCR 并发：每个"设备"一个信号量，同时最多 OCR_PARALLEL 页在跑。
+        # 6 核实测最优为 4 worker（~1.7x），默认 min(4, cpu_count)，可环境变量覆盖。
+        # 仅 rapidocr 启用（onnxruntime session 并发安全）；PaddleOCR 引擎保持串行。
+        n_ocr_workers = max(
+            1, min(int(os.getenv("OCR_PARALLEL", "4")), os.cpu_count() or 1)
+        ) if ocr_engine == "rapidocr" else 0
+        self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(n_ocr_workers)] \
+            if n_ocr_workers else None
         self.ocr.parallel_limiter = None  # OCR 的并发由本解析器通过 self.parallel_limiter 统一控制
 
         if hasattr(self, "model_speciess"):
@@ -435,7 +444,7 @@ class RAGFlowPdfParser:
         start = timer()
         # 如果没有检测到任何框，直接返回空列表
         if not bxs:
-            self.boxes.append([])
+            self.boxes[pagenum - 1] = []
             return
 
         # 提取检测框的位置和初始文本
@@ -453,7 +462,7 @@ class RAGFlowPdfParser:
                 "page_number": pagenum
             }
             for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]
-        ], self.mean_height[-1] / 3)
+        ], self.mean_height[pagenum - 1] / 3)
 
         # 合并每个字符到其对应框中
         for c in Recognizer.sort_Y_firstly(chars, self.mean_height[pagenum - 1] // 4):
@@ -490,12 +499,8 @@ class RAGFlowPdfParser:
                 boxes_to_reg.append(b)
             del b["txt"]  # 删除临时文本字段
 
-        # 批量文本识别
-        if self.parallel_limiter is not None:
-            with self.parallel_limiter:
-                texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
-        else:
-            texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
+        # 批量文本识别（页间并发由 trio limiter 控制，此处直接批量识别）
+        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
 
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
@@ -507,11 +512,12 @@ class RAGFlowPdfParser:
         bxs = [b for b in bxs if b["text"]]
 
         # 如果未设置平均高度，则设置为当前页面中框的中位高度
-        if self.mean_height[-1] == 0:
-            self.mean_height[-1] = np.median([b["bottom"] - b["top"] for b in bxs])
+        if self.mean_height[pagenum - 1] == 0:
+            self.mean_height[pagenum - 1] = np.median(
+                [b["bottom"] - b["top"] for b in bxs])
 
-        # 将本页的框加入总框集合
-        self.boxes.append(bxs)
+        # 将本页的框写入对应页（索引写，并发安全，避免多页 append 乱序）
+        self.boxes[pagenum - 1] = bxs
 
     def _layouts_rec(self, ZM, drop=True):
         # 布局识别：识别每个框的布局类型（文本、图像、表格等）
@@ -1307,6 +1313,8 @@ class RAGFlowPdfParser:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
 
         async def __img_ocr_launcher():
+            self.boxes = [[] for _ in self.page_images]  # 预分配固定页序，并发写安全
+
             def __ocr_preprocess():
                 chars = self.page_chars[i] if not self.is_english else []
                 self.mean_height.append(
@@ -1323,8 +1331,8 @@ class RAGFlowPdfParser:
                     for i, img in enumerate(self.page_images):
                         chars = __ocr_preprocess()
 
-                        nursery.start_soon(__img_ocr, i, i % PARALLEL_DEVICES, img, chars,
-                                           self.parallel_limiter[i % PARALLEL_DEVICES])
+                        nursery.start_soon(__img_ocr, i, i % len(self.parallel_limiter), img, chars,
+                                           self.parallel_limiter[i % len(self.parallel_limiter)])
                         await trio.sleep(0.1)
             else:
                 for i, img in enumerate(self.page_images):
@@ -1347,7 +1355,7 @@ class RAGFlowPdfParser:
 
         self.page_cum_height = np.cumsum(self.page_cum_height)
         assert len(self.page_cum_height) == len(self.page_images) + 1
-        if len(self.boxes) == 0 and zoomin < 9:
+        if not self.boxes and zoomin < 9:
             self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
 
     # 入口函数，负责从 PDF 中提取所有结构化内容。
