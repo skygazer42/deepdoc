@@ -80,17 +80,17 @@ def main():
 
         # __images__
         t0 = time.time()
-        parser.__images__(str(path), zoomin=3)
+        zoomin = parser.__images__(str(path), zoomin=3)
         stage_times["__images__"] = (time.time() - t0) * 1000
 
         # _layouts_rec
         t0 = time.time()
-        parser._layouts_rec(3)
+        parser._layouts_rec(zoomin)
         stage_times["_layouts_rec"] = (time.time() - t0) * 1000
 
         # _table_transformer_job
         t0 = time.time()
-        parser._table_transformer_job(3)
+        parser._table_transformer_job(zoomin)
         stage_times["_table_transformer_job"] = (time.time() - t0) * 1000
 
         # _text_merge
@@ -112,7 +112,7 @@ def main():
         t0 = time.time()
         try:
             parser._extract_table_figure(
-                need_image=False, ZM=3, return_html=False, need_position=False)
+                need_image=False, ZM=zoomin, return_html=False, need_position=False)
         except Exception:
             pass
         stage_times["_extract_table_figure"] = (time.time() - t0) * 1000

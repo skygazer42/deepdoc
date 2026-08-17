@@ -56,9 +56,9 @@ def merge_blocks(blocks):
 def run(pdf_path):
     parser = RAGFlowPdfParser()
     t0 = time.time()
-    parser.__images__(str(pdf_path), zoomin=3)
-    parser._layouts_rec(3)
-    parser._table_transformer_job(3)
+    zoomin = parser.__images__(str(pdf_path), zoomin=3)
+    parser._layouts_rec(zoomin)
+    parser._table_transformer_job(zoomin)
     parser._text_merge()
     parse_t = time.time() - t0
     snap = copy.deepcopy(parser.boxes)

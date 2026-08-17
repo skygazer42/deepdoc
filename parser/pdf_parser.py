@@ -50,6 +50,146 @@ if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 
+def _native_chars_are_usable(chars):
+    """判断页面原生文本层是否足以替代整页 OCR。
+
+    ``NATIVE_TEXT_MODE=off`` 可恢复旧的全页 OCR 行为，主要用于 OCR 基准；
+    ``force`` 会信任任意非空文本层，默认 ``auto`` 则要求达到最小字符数。
+    """
+    mode = os.getenv("NATIVE_TEXT_MODE", "auto").strip().lower()
+    if mode in {"off", "false", "0", "ocr"}:
+        return False
+
+    visible = []
+    for char in chars:
+        text = str(char.get("text", ""))
+        visible.extend(ch for ch in text if not ch.isspace())
+    if not visible:
+        return False
+    if mode in {"force", "on", "true", "1"}:
+        return True
+
+    min_chars = max(1, int(os.getenv("NATIVE_TEXT_MIN_CHARS_PER_PAGE", "40")))
+    bad_chars = sum(ch == "\ufffd" or not ch.isprintable() for ch in visible)
+    return len(visible) >= min_chars and bad_chars / len(visible) <= 0.1
+
+
+def _join_native_words(words):
+    """按 PDF 中的实际词间距重建一行，避免英文单词粘连。"""
+    text = ""
+    previous = None
+    for word in words:
+        token = str(word.get("text", "")).strip()
+        if not token:
+            continue
+        if not text:
+            text = token
+        else:
+            gap = float(word["x0"]) - float(previous["x1"])
+            no_space_before = bool(re.match(r"^[,.;:!?%‰\)\]\}]", token))
+            no_space_after = text.endswith(("(", "[", "{", "/", "-"))
+            text += token if gap <= 0.5 or no_space_before or no_space_after else " " + token
+        previous = word
+    return text
+
+
+def _native_text_boxes(chars, pagenum, page_width):
+    """把 pdfplumber 原生字符层转换成 Layout 可消费的行框。
+
+    先按词聚类为视觉行，再在页面中缝处分开双栏内容。这样既能把标题中的
+    英文空格保留下来，也不会像整页 ``extract_text_lines`` 那样把左右栏串行。
+    """
+    if not chars:
+        return []
+    try:
+        words = pdfplumber.utils.extract_words(
+            chars,
+            keep_blank_chars=False,
+            use_text_flow=False,
+            x_tolerance=2,
+            y_tolerance=2,
+        )
+    except Exception:
+        logging.debug("Failed to build native PDF words", exc_info=True)
+        return []
+    words = [w for w in words if str(w.get("text", "")).strip()]
+    if not words:
+        return []
+
+    # 同一视觉行的词可能因字体、上下标而有轻微 top 偏差。使用稳定的中位
+    # 中心线聚类，不能用不断扩张的 top/bottom 联集，否则图表中的竖向标注
+    # 会把许多相邻正文行“桥接”成一个大框。
+    lines = []
+    for word in sorted(words, key=lambda w: (float(w["top"]), float(w["x0"]))):
+        top, bottom = float(word["top"]), float(word["bottom"])
+        height = max(bottom - top, 0.1)
+        center = (top + bottom) / 2
+        match = None
+        best_delta = float("inf")
+        for line in reversed(lines[-16:]):
+            line_center = float(np.median(line["centers"]))
+            line_height = max(float(np.median(line["heights"])), 0.1)
+            center_delta = abs(center - line_center)
+            if center_delta <= max(1.5, min(height, line_height) * 0.45):
+                if center_delta < best_delta:
+                    best_delta = center_delta
+                    match = line
+        if match is None:
+            lines.append({
+                "top": top,
+                "bottom": bottom,
+                "centers": [center],
+                "heights": [height],
+                "words": [word],
+            })
+        else:
+            match["top"] = min(match["top"], top)
+            match["bottom"] = max(match["bottom"], bottom)
+            match["centers"].append(center)
+            match["heights"].append(height)
+            match["words"].append(word)
+
+    boxes = []
+    for line in sorted(lines, key=lambda item: (item["top"], min(w["x0"] for w in item["words"]))):
+        line_words = sorted(line["words"], key=lambda w: float(w["x0"]))
+        line_height = max(line["bottom"] - line["top"], 0.1)
+        segments = [[]]
+        for word in line_words:
+            if segments[-1]:
+                previous = segments[-1][-1]
+                gap = float(word["x0"]) - float(previous["x1"])
+                # 论文双栏中缝通常位于页面 49%~51% 之间；标题/作者即使跨过
+                # 页面中心，也不会同时停在中缝两侧，因此不会被误拆。
+                crosses_gutter = (
+                    float(previous["x1"]) <= page_width * 0.48
+                    and float(word["x0"]) >= page_width * 0.50
+                    and gap > line_height * 0.5
+                )
+                leaves_side_margin = (
+                    float(previous["x1"]) < page_width * 0.08
+                    and float(word["x0"]) >= page_width * 0.08
+                    and gap > line_height
+                )
+                very_large_gap = gap > max(30.0, line_height * 3)
+                if crosses_gutter or leaves_side_margin or very_large_gap:
+                    segments.append([])
+            segments[-1].append(word)
+
+        for segment in segments:
+            text = _join_native_words(segment)
+            if not text:
+                continue
+            boxes.append({
+                "x0": float(min(w["x0"] for w in segment)),
+                "x1": float(max(w["x1"] for w in segment)),
+                "top": float(min(w["top"] for w in segment)),
+                "bottom": float(max(w["bottom"] for w in segment)),
+                "text": text,
+                "page_number": pagenum,
+            })
+    return boxes
+
+
 def vision_llm_describe_prompt(page=None) -> str:
     prompt_en = """
 INSTRUCTION:
@@ -558,10 +698,17 @@ class RAGFlowPdfParser:
             if abs(self._y_dis(b, b_)
                    ) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
                 # merge
+                gap = b_["x0"] - b["x1"]
+                separator = " " if (
+                    self.is_english
+                    and gap > 0.5
+                    and re.search(r"[0-9A-Za-z]$", b["text"])
+                    and re.match(r"[0-9A-Za-z]", b_["text"])
+                ) else ""
                 bxs[i]["x1"] = b_["x1"]
                 bxs[i]["top"] = (b["top"] + b_["top"]) / 2
                 bxs[i]["bottom"] = (b["bottom"] + b_["bottom"]) / 2
-                bxs[i]["text"] += b_["text"]
+                bxs[i]["text"] += separator + b_["text"]
                 bxs.pop(i + 1)
                 continue
             i += 1
@@ -761,8 +908,19 @@ class RAGFlowPdfParser:
                         i += 1
                         continue
 
-                    # 模型预测查表（概率已在预扫描阶段批量推理）
-                    if updown_prob[(up["_cidx"], down["_cidx"])] <= 0.5:
+                    # 模型预测通常来自预扫描批量缓存。原生文本框的阅读顺序
+                    # 比 OCR 框更丰富，少数候选可能越过预扫描基于 Y 顺序的
+                    # break；对此按需补算，不能因缓存缺键中断整份文档。
+                    prob_key = (up["_cidx"], down["_cidx"])
+                    prob = updown_prob.get(prob_key)
+                    if prob is None:
+                        features = np.array(
+                            [self._updown_concat_features(up, down)],
+                            dtype=np.float32,
+                        )
+                        prob = float(self.updown_cnt_mdl.inplace_predict(features)[0])
+                        updown_prob[prob_key] = prob
+                    if prob <= 0.5:
                         i += 1
                         continue
                     dfs(down, i + 1)
@@ -909,13 +1067,16 @@ class RAGFlowPdfParser:
                 self.boxes.pop(i)
                 lst_lout_no = lout_no
                 continue
-            if need_image and self.boxes[i]["layout_type"] == "figure":
+            if self.boxes[i]["layout_type"] == "figure":
                 if re.match(r"(数据|资料|图表)*来源[:： ]", self.boxes[i]["text"]):
                     self.boxes.pop(i)
                     continue
-                if lout_no not in figures:
-                    figures[lout_no] = []
-                figures[lout_no].append(self.boxes[i])
+                # 图内坐标轴/标签不能混入正文。即使调用方不需要返回裁图，也
+                # 必须把 figure 框从文本候选中移走；need_image 只控制是否裁图。
+                if need_image:
+                    if lout_no not in figures:
+                        figures[lout_no] = []
+                    figures[lout_no].append(self.boxes[i])
                 self.boxes.pop(i)
                 lst_lout_no = lout_no
                 continue
@@ -1232,7 +1393,7 @@ class RAGFlowPdfParser:
         最终用于后续的版面分析、表格识别与文字合并。
         使用 pdfplumber 提取每页图像和字符；
         检测是否为英文文档（通过字符分析）；
-        异步调用 __ocr 执行 OCR 识别；
+        原生文本页直接构造成文字框，仅对缺少可靠文本层的页面调用 OCR；
         统计平均字符宽高，累积每页图像高度，方便跨页处理。
         """
         self.lefted_chars = []
@@ -1243,21 +1404,32 @@ class RAGFlowPdfParser:
         self.page_cum_height = [0]
         self.page_layout = []
         self.page_from = page_from
+        self._effective_zoomin = zoomin
         start = timer()
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 self.pdf = pdfplumber.open(fnm) if isinstance(
                     fnm, str) else pdfplumber.open(BytesIO(fnm))
-                self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
-                                    enumerate(self.pdf.pages[page_from:page_to])]
+                pages = self.pdf.pages[page_from:page_to]
                 try:
                     self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in
-                                       self.pdf.pages[page_from:page_to]]
+                                       pages]
                 except Exception as e:
                     logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                     self.page_chars = [[] for _ in
                                        range(page_to - page_from)]  # If failed to extract, using empty list instead.
 
+                # DocLayout 最终会缩放到固定输入尺寸。全原生文本页用 2x 渲染
+                # 足够保留布局和表格细节，同时显著减少 PDF rasterize/内存开销；
+                # 扫描页仍保留请求的高分辨率供 OCR 使用。
+                if self.page_chars and all(_native_chars_are_usable(chars) for chars in self.page_chars):
+                    native_zoomin = max(1, int(os.getenv("NATIVE_LAYOUT_ZOOMIN", "2")))
+                    zoomin = min(zoomin, native_zoomin)
+                self._effective_zoomin = zoomin
+                self.page_images = [
+                    page.to_image(resolution=72 * zoomin).annotated
+                    for page in pages
+                ]
                 self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
@@ -1314,9 +1486,12 @@ class RAGFlowPdfParser:
 
         async def __img_ocr_launcher():
             self.boxes = [[] for _ in self.page_images]  # 预分配固定页序，并发写安全
+            ocr_jobs = []
+            self.native_text_pages = []
+            self.ocr_pages = []
 
-            def __ocr_preprocess():
-                chars = self.page_chars[i] if not self.is_english else []
+            for i, img in enumerate(self.page_images):
+                chars = self.page_chars[i]
                 self.mean_height.append(
                     np.median(sorted([c["height"] for c in chars])) if chars else 0
                 )
@@ -1324,26 +1499,37 @@ class RAGFlowPdfParser:
                     np.median(sorted([c["width"] for c in chars])) if chars else 8
                 )
                 self.page_cum_height.append(img.size[1] / zoomin)
-                return chars
+
+                native_boxes = []
+                if _native_chars_are_usable(chars):
+                    native_boxes = _native_text_boxes(
+                        chars, i + 1, img.size[0] / zoomin)
+                if native_boxes:
+                    self.boxes[i] = native_boxes
+                    self.native_text_pages.append(i + 1)
+                else:
+                    ocr_jobs.append((i, img, chars))
+                    self.ocr_pages.append(i + 1)
 
             if self.parallel_limiter:
                 async with trio.open_nursery() as nursery:
-                    for i, img in enumerate(self.page_images):
-                        chars = __ocr_preprocess()
-
+                    for i, img, chars in ocr_jobs:
                         nursery.start_soon(__img_ocr, i, i % len(self.parallel_limiter), img, chars,
                                            self.parallel_limiter[i % len(self.parallel_limiter)])
                         await trio.sleep(0.1)
             else:
-                for i, img in enumerate(self.page_images):
-                    chars = __ocr_preprocess()
+                for i, img, chars in ocr_jobs:
                     await __img_ocr(i, 0, img, chars, None)
 
         start = timer()
 
         trio.run(__img_ocr_launcher)
 
-        logging.info(f"__images__ {len(self.page_images)} pages cost {timer() - start}s")
+        logging.info(
+            "__images__ %s pages cost %.3fs (native_text=%s, ocr=%s)",
+            len(self.page_images), timer() - start,
+            len(self.native_text_pages), len(self.ocr_pages),
+        )
 
         if not self.is_english and not any(
                 [c for c in self.page_chars]) and self.boxes:
@@ -1356,7 +1542,8 @@ class RAGFlowPdfParser:
         self.page_cum_height = np.cumsum(self.page_cum_height)
         assert len(self.page_cum_height) == len(self.page_images) + 1
         if not self.boxes and zoomin < 9:
-            self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
+            return self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
+        return self._effective_zoomin
 
     # 入口函数，负责从 PDF 中提取所有结构化内容。
 
@@ -1369,7 +1556,7 @@ class RAGFlowPdfParser:
         _filter_forpages() 去除目录等无效页面；
         _extract_table_figure() 抽取最终的表格 / 图像信息。
         """
-        self.__images__(fnm, zoomin)
+        zoomin = self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
         self._table_transformer_job(zoomin)
         self._text_merge()

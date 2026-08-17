@@ -16,6 +16,8 @@ os.environ["OCR_ENGINE"] = "rapidocr"
 os.environ["LAYOUT_MODEL"] = "doclayout"
 os.environ["LAYOUT_MODEL_SIZE"] = "768"
 os.environ["TABLE_ENGINE"] = "slanet"
+# 本脚本只比较 OCR 并发，必须禁用原生文本页短路。
+os.environ["NATIVE_TEXT_MODE"] = "off"
 
 PDF = ROOT / "regression" / "documents" / "resnet.pdf"
 N_PAGES = int(sys.argv[1]) if len(sys.argv) > 1 else 3

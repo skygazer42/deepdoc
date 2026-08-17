@@ -150,9 +150,9 @@ def main():
 
     parser = RAGFlowPdfParser()
     t0 = time.time()
-    parser.__images__(str(pdf_path), zoomin=3)
-    parser._layouts_rec(3)
-    parser._table_transformer_job(3)
+    zoomin = parser.__images__(str(pdf_path), zoomin=3)
+    parser._layouts_rec(zoomin)
+    parser._table_transformer_job(zoomin)
     parser._text_merge()
     print(f"[{pdf_name}] 解析到 _text_merge 完成: {time.time()-t0:.0f}s, "
           f"boxes={len(parser.boxes)}")

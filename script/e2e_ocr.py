@@ -15,6 +15,8 @@ os.environ["OCR_ENGINE"] = "rapidocr"
 os.environ["LAYOUT_MODEL"] = "doclayout"
 os.environ["LAYOUT_MODEL_SIZE"] = "768"
 os.environ["TABLE_ENGINE"] = "slanet"
+# 本脚本比较 OCR 并发，因此显式关闭原生文本短路；正常解析保持 auto。
+os.environ["NATIVE_TEXT_MODE"] = "off"
 
 PDF = ROOT / "regression" / "documents" / "resnet.pdf"
 
